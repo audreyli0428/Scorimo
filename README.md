@@ -1,34 +1,29 @@
 # 🏠 Scorimo
 
-> Automated listing quality scoring for French real estate — with a full MLOps pipeline.
+## Overview
 
-Scorimo automatically scores property listings (0–100) based on information completeness and consistency, helping buyers filter out low-quality listings on platforms like SeLoger or Leboncoin.
+**Scorimo** is an automated listing quality scoring tool for French real estate platforms (SeLoger, Leboncoin, etc.).
 
----
-
-## 📌 Table of Contents
-
-- [Problem Statement](#problem-statement)
-- [Product Overview](#product-overview)
-- [Architecture](#architecture)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [MLOps Pipeline](#mlops-pipeline)
-- [Team](#team)
+It scores each property listing from **0 to 100** based on information completeness and consistency, helping buyers instantly filter out low-quality listings — without manual inspection.
 
 ---
 
 ## Problem Statement
 
-On French real estate platforms, many listings suffer from missing or inconsistent information: vague descriptions, few photos, incomplete addresses, or suspicious price-to-surface ratios. Buyers waste time manually filtering these out.
+Anyone who has searched for housing in France has encountered listings with:
+- Vague or missing descriptions
+- Too few photos
+- Incomplete addresses
+- Suspicious price-to-surface ratios
 
-**Scorimo solves this by automatically scoring each listing's information quality**, so buyers can focus on what matters.
+**Scorimo solves this** by automatically evaluating each listing's data quality and returning a structured score with explanations.
 
 ---
 
-## Product Overview
+## What the Tool Does
 
-**Input** — structured listing data:
+The user (or platform) submits listing data:
+
 ```json
 {
   "price": 320000,
@@ -40,7 +35,8 @@ On French real estate platforms, many listings suffer from missing or inconsiste
 }
 ```
 
-**Output** — quality score + explanation:
+The API returns a quality score and diagnosis:
+
 ```json
 {
   "quality_score": 58,
@@ -50,9 +46,27 @@ On French real estate platforms, many listings suffer from missing or inconsiste
 }
 ```
 
+### Score & Tier Logic
+
+Scoring starts at 100 and deductions are applied based on:
+
+| Issue | Deduction |
+|-------|-----------|
+| `photo_count < 3` | -20 |
+| `description_length < 100` | -15 |
+| `price / surface > 15,000` | -10 |
+| No room information | -10 |
+| Location precision = "city" | -10 |
+
+Final tier:
+- `HIGH` → score ≥ 75
+- `MEDIUM` → score ≥ 50
+- `LOW` → score < 50
+
 ---
 
 ## Architecture
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                        DATA LAYER                        │
@@ -80,13 +94,14 @@ On French real estate platforms, many listings suffer from missing or inconsiste
 ---
 
 ## Project Structure
+
 ```
-scorimo/
+Scorimo/
 │
 ├── data/
 │   ├── raw/                  # Raw data from data.gouv.fr
 │   ├── processed/            # Cleaned & feature-engineered dataset
-│   └── prepare_data.py       # Data preparation script
+│   └── prepare_data.py       # Data download and cleaning script
 │
 ├── training/
 │   ├── train.py              # Model training script (logs to MLflow)
@@ -112,14 +127,59 @@ scorimo/
 
 ---
 
-## Getting Started
+## MLOps Pipeline
+
+### 1. Data Layer (Member C — Haoju Li)
+- Data sourced from [data.gouv.fr](https://www.data.gouv.fr)
+- Cleaned and feature-engineered in `data/prepare_data.py`
+- Scoring rules defined in `training/score_rules.py`
+
+### 2. Experiment Tracking — MLflow (Member A — Hangbo Yang)
+Every training run automatically logs:
+- Parameters (scoring weights, thresholds)
+- Metrics (MAE, accuracy)
+- Model artifact
+
+Run the MLflow UI:
+```bash
+mlflow ui
+# → open http://localhost:5000
+```
+
+### 3. Model Registry — MLflow (Member A — Hangbo Yang)
+Models are versioned and promoted through stages:
+```
+None  →  Staging  →  Production
+```
+The API always loads whichever model is tagged **Production**.
+
+### 4. Serving — FastAPI + Docker (Member B — Ke Chen)
+The API dynamically loads the Production model at startup.
+Switching model versions requires **no code change** — update the Registry and restart.
+
+Available endpoints:
+- `POST /predict` — score a listing
+- `GET /health` — health check
+- `GET /model-info` — current model version
+
+### 5. Monitoring — Evidently (Member C — Haoju Li)
+Every prediction is logged. Evidently compares incoming distributions against a reference baseline.
+
+```bash
+python monitoring/monitor.py
+# → generates drift_report.html in your browser
+```
+
+---
+
+## Installation & Usage
 
 ### Prerequisites
-
 - Python 3.10+
 - Docker
 
 ### Run locally
+
 ```bash
 # 1. Clone the repo
 git clone https://github.com/audreyli0428/Scorimo.git
@@ -134,11 +194,15 @@ python data/prepare_data.py
 # 4. Train the model
 python training/train.py
 
-# 5. Start the API
+# 5. Promote model to Production in MLflow UI
+#    → http://localhost:5000
+
+# 6. Start the API
 docker-compose up
 ```
 
 ### Call the API
+
 ```bash
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
@@ -147,25 +211,15 @@ curl -X POST http://localhost:8000/predict \
 
 ---
 
-## MLOps Pipeline
+## What We Chose NOT to Build
 
-### 1. Experiment Tracking (MLflow)
-Every training run logs parameters, metrics (MAE, accuracy), and the model artifact.
+### 1. Search history
+- No database or query logging
+- > Possible improvement: store queries with SQLite and export to `.xlsx`
 
-### 2. Model Registry (MLflow)
-Models are promoted through stages:
-```
-None  →  Staging  →  Production
-```
-
-### 3. Serving (FastAPI + Docker)
-The API dynamically loads the Production model at startup. No code change needed to switch versions.
-
-### 4. Monitoring (Evidently)
-Incoming data is compared against a reference baseline to detect drift.
-```bash
-python monitoring/monitor.py
-```
+### 2. Online hosting
+- Local only (no cloud deployment)
+- > Possible improvement: deploy via a serverless platform
 
 ---
 
@@ -173,6 +227,19 @@ python monitoring/monitor.py
 
 | Member | Role | Owns |
 |--------|------|------|
-| **Member A** | MLOps Engineer | MLflow tracking, Model Registry (`training/`) |
-| **Member B** | Deployment Engineer | FastAPI, Docker, model loader (`serving/`) |
-| **Member C** | Data & Monitoring | Data pipeline, scoring rules, Evidently (`data/`, `monitoring/`) |
+| **Hangbo Yang** | MLOps Engineer | MLflow tracking, Model Registry (`training/`) |
+| **Ke Chen** | Deployment Engineer | FastAPI, Docker, model loader (`serving/`) |
+| **Haoju Li** | Data & Monitoring | Data pipeline, scoring rules, Evidently (`data/`, `monitoring/`) |
+
+---
+
+## Branch Strategy
+
+```
+main        ← stable, demo-ready only
+develop     ← integration branch
+  ├── feature/data-pipeline        (Haoju Li)
+  ├── feature/training-mlflow      (Hangbo Yang)
+  ├── feature/serving-api          (Ke Chen)
+  └── feature/monitoring-evidently (Haoju Li)
+```
