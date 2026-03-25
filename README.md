@@ -1,207 +1,163 @@
-# 🏠 Scorimo
+# Scorimo - Listing Quality Scoring Tool
 
-## Overview
+## Context
 
-**Scorimo** is an automated listing quality scoring tool for French real estate platforms (SeLoger, Leboncoin, etc.).
+Finding student housing in France is already stressful, and a lot of listings on SeLoger or Leboncoin make it worse. Photos are missing or useless, descriptions are vague, and some prices are clearly off. You waste time opening listings that have nothing to tell you.
 
-It scores each property listing from **0 to 100** based on information completeness and consistency, helping buyers instantly filter out low-quality listings — without manual inspection.
+Scorimo scores each listing from 0 to 100 and flags exactly what's wrong, so students can decide at a glance whether something's worth clicking into.
 
----
-
-## Problem Statement
-
-Anyone who has searched for housing in France has encountered listings with:
-- Vague or missing descriptions
-- Too few photos
-- Incomplete addresses
-- Suspicious price-to-surface ratios
-
-**Scorimo solves this** by automatically evaluating each listing's data quality and returning a structured score with explanations.
+We kept the project simple on purpose. We're more comfortable with data and rule logic than with building full-stack systems, and we didn't want to over-engineer something that's essentially a scoring tool. It works, it's easy to explain, and that's enough for now.
 
 ---
 
-## What the Tool Does
+## Data Source
 
-The user (or platform) submits listing data:
+The data used in this project is randomly generated within reasonable French market ranges for demonstration purposes. A real deployment would require integrating actual listing data from platforms such as SeLoger or Leboncoin, including fields like photo count and description length.
 
-```json
-{
-  "price": 320000,
-  "surface": 45,
-  "description_length": 80,
-  "photo_count": 2,
-  "location_precision": "district",
-  "rooms": 2
-}
-```
+### Input fields
 
-The API returns a quality score and diagnosis:
+The API accepts the following listing attributes:
+
+- `price` - Price in euros
+- `surface` - Surface area in m^2
+- `description_length` - Number of characters in the listing description
+- `photo_count` - Number of photos attached to the listing
+- `location_precision` - Granularity of the stated location ("address", "arrondissment", or "city")
+- `rooms` - number of rooms
+
+---
+
+## What the Tool Returns
+
+Calling `POST /predict` with a listing's fields returns:
+
+- `quality_score` - an integer from 0 to 100
+- `tier` - HIGH (score >= 75), MEDIUM (score >= 50), or LOW (score < 50)
+- `issues` - a list of the specific problems detected
+- `model_version` - the version of the scoring logic used
+
+Example response:
 
 ```json
 {
   "quality_score": 58,
-  "tier": "LOW",
-  "issues": ["Too few photos", "Short description", "No floor information"],
+  "tier": "MEDIUM",
+  "issues": ["Too few photos", "Short description"],
   "model_version": "v1.4"
 }
 ```
 
-### Score & Tier Logic
-
-Scoring starts at 100 and deductions are applied based on:
-
-| Issue | Deduction |
-|-------|-----------|
-| `photo_count < 3` | -20 |
-| `description_length < 100` | -15 |
-| `price / surface > 15,000` | -10 |
-| No room information | -10 |
-| Location precision = "city" | -10 |
-
-Final tier:
-- `HIGH` → score ≥ 75
-- `MEDIUM` → score ≥ 50
-- `LOW` → score < 50
-
 ---
 
-## Architecture
+## Scoring Method
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                        DATA LAYER                        │
-│         data.gouv.fr  →  cleaning  →  feature eng.      │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│                     TRAINING LAYER                       │
-│         train.py  →  MLflow Tracking  →  Model Registry  │
-│                    (Staging / Production)                 │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│                    SERVING LAYER                         │
-│         FastAPI  →  Docker  →  /predict endpoint         │
-│         (loads Production model from Registry)           │
-└───────────────────────────┬─────────────────────────────┘
-                            │
-┌───────────────────────────▼─────────────────────────────┐
-│                   MONITORING LAYER                       │
-│         Evidently  →  drift detection  →  alerts         │
-└─────────────────────────────────────────────────────────┘
-```
+The score starts at 100. Points are deducted when a listing fails a threshold:
 
----
+| Problem | Condition | Points lost |
+|---|---|---|
+| Too few photos | photo_count < 3 | -20 |
+| Short description | description_length < 100 | -15 |
+| Price per m^2 too high | price / surface > 15,000 | -10 |
+| No room information | rooms is missing | -10 |
+| Imprecise location | location_precision = "city" | -10 |
 
-## Project Structure
+The final score is grouped into a tier: HIGH means the listing looks complete and is worth a closer look; MEDIUM means some information is missing or unclear; LOW means too many fields are absent or suspicious.
 
-```
-Scorimo/
-│
-├── data/
-│   ├── raw/                  # Raw data from data.gouv.fr
-│   ├── processed/            # Cleaned & feature-engineered dataset
-│   └── prepare_data.py       # Data download and cleaning script
-│
-├── training/
-│   ├── train.py              # Model training script (logs to MLflow)
-│   ├── score_rules.py        # Quality scoring rule definitions
-│   └── evaluate.py           # Model evaluation metrics
-│
-├── serving/
-│   ├── app.py                # FastAPI application
-│   ├── model_loader.py       # Loads Production model from MLflow Registry
-│   └── Dockerfile            # Container definition
-│
-├── monitoring/
-│   ├── monitor.py            # Evidently drift detection
-│   └── reference_data.csv    # Baseline distribution for drift comparison
-│
-├── mlflow/
-│   └── mlruns/               # MLflow tracking directory (local)
-│
-├── docker-compose.yml
-├── requirements.txt
-└── README.md
-```
+### Why rules rather than a trained model
+
+We looked for existing datasets that include things like photo count and description length, but there aren't any public ones that also come with quality labels.
+
+Without labelled data, training a model didn't make sense. Rules felt like the right call here: every deduction ties back to a specific field and threshold, so the score is easy to explain and easy to tweak if the thresholds turn out to be off.
+
+We do train a model in train.py, but only to sanity-check the rules, with an MAE of 5.26 tells us the scoring logic is at least consistent.
 
 ---
 
 ## MLOps Pipeline
 
-### 1. Data Layer (Member C — Haoju Li)
-- Data sourced from [data.gouv.fr](https://www.data.gouv.fr)
-- Cleaned and feature-engineered in `data/prepare_data.py`
-- Scoring rules defined in `training/score_rules.py`
+### Data layer
 
-### 2. Experiment Tracking — MLflow (Member A — Hangbo Yang)
-Every training run automatically logs:
-- Parameters (scoring weights, thresholds)
-- Metrics (MAE, accuracy)
-- Model artifact
+Sample data is randomly generated within reasonable French real estate market ranges in data/prepare_data.py and stored in data/processed/. The scoring thresholds are defined separately in training/score_rules.py so they can be updated without touching the rest of the codebase.
 
-Run the MLflow UI:
+### Experiment tracking with MLflow
+
+Each training run logs its parameters, metrics, and model artifact to MLflow. To open the dashboard:
+
 ```bash
 mlflow ui
-# → open http://localhost:5000
+# opens at http://localhost:5000
 ```
 
-### 3. Model Registry — MLflow (Member A — Hangbo Yang)
-Models are versioned and promoted through stages:
-```
-None  →  Staging  →  Production
-```
-The API always loads whichever model is tagged **Production**.
+### Model registry
 
-### 4. Serving — FastAPI + Docker (Member B — Ke Chen)
-The API dynamically loads the Production model at startup.
-Switching model versions requires **no code change** — update the Registry and restart.
+Models are promoted through three stages: None, Staging, and Production. The serving API always loads whichever model is marked Production. Switching versions requires only a registry update and a container restart, without any code changes.
 
-Available endpoints:
-- `POST /predict` — score a listing
-- `GET /health` — health check
-- `GET /model-info` — current model version
+### Serving with FastAPI and Docker
 
-### 5. Monitoring — Evidently (Member C — Haoju Li)
-Every prediction is logged. Evidently compares incoming distributions against a reference baseline.
+Three endpoints are available:
+
+- `POST /predict` - score a listing
+- `GET /health` - confirm the API is running
+- `GET /model-info` - see which model version is loaded
+
+### Monitoring with Evidently
+
+Predictions are saved and compared against the training data distribution. To run a drift report:
 
 ```bash
 python monitoring/monitor.py
-# → generates drift_report.html in your browser
+# generates drift_report.html
 ```
 
 ---
 
-## Installation & Usage
+## Limitations and Possible Improvements
 
-### Prerequisites
-- Python 3.10+
+This is a proof-of-concept, and we know it. The thresholds we use, fewer than 3 photos, descriptions under 100 characters, etc. are educated guesses, not numbers derived from real data.
+
+The problem is real though, and the approach can be improved. The obvious next step is scraping actual listings from SeLoger or Leboncoin and using the real distributions to set better thresholds.
+---
+
+## Project Structure
+
+```
+data/prepare_data.py       - downloads and cleans the source data
+data/raw/                  - original files from data.gouv.fr
+data/processed/            - cleaned dataset used for training
+training/train.py          - trains the model and logs results to MLflow
+training/score_rules.py    - defines the deduction rules
+training/evaluate.py       - evaluates model performance
+serving/app.py             - FastAPI application
+serving/model_loader.py    - loads the Production model from the registry
+serving/Dockerfile         - container definition
+monitoring/monitor.py      - runs drift detection
+monitoring/reference_data.csv - baseline data for comparison
+docker-compose.yml         - orchestrates all services
+requirements.txt           - Python dependencies
+```
+
+---
+
+## Installation and Usage
+
+### Requirements
+
+- Python 3.10 or higher
 - Docker
 
-### Run locally
+### Running locally
 
 ```bash
-# 1. Clone the repo
 git clone https://github.com/audreyli0428/Scorimo.git
 cd Scorimo
-
-# 2. Install dependencies
 pip install -r requirements.txt
-
-# 3. Generate sample data
 python data/prepare_data.py
-
-# 4. Train the model
 python training/train.py
-
-# 5. Promote model to Production in MLflow UI
-#    → http://localhost:5000
-
-# 6. Start the API
+# Open http://localhost:5000, promote the model to Production in the MLflow UI
 docker-compose up
 ```
 
-### Call the API
+### Calling the API
 
 ```bash
 curl -X POST http://localhost:8000/predict \
@@ -209,37 +165,19 @@ curl -X POST http://localhost:8000/predict \
   -d '{"price": 320000, "surface": 45, "photo_count": 2, "description_length": 80, "rooms": 2}'
 ```
 
----
+### Running with Docker only
 
-## What We Chose NOT to Build
-
-### 1. Search history
-- No database or query logging
-- > Possible improvement: store queries with SQLite and export to `.xlsx`
-
-### 2. Online hosting
-- Local only (no cloud deployment)
-- > Possible improvement: deploy via a serverless platform
+```bash
+docker build -t scorimo .
+docker run --rm -p 8000:8000 scorimo
+```
 
 ---
 
 ## Team
 
-| Member | Role | Owns |
-|--------|------|------|
-| **Hangbo Yang** | MLOps Engineer | MLflow tracking, Model Registry (`training/`) |
-| **Ke Chen** | Deployment Engineer | FastAPI, Docker, model loader (`serving/`) |
-| **Haoju Li** | Data & Monitoring | Data pipeline, scoring rules, Evidently (`data/`, `monitoring/`) |
-
----
-
-## Branch Strategy
-
-```
-main        ← stable, demo-ready only
-develop     ← integration branch
-  ├── feature/data-pipeline        (Haoju Li)
-  ├── feature/training-mlflow      (Hangbo Yang)
-  ├── feature/serving-api          (Ke Chen)
-  └── feature/monitoring-evidently (Haoju Li)
-```
+| Member | Role | Responsible for |
+|---|---|---|
+| Hangbo Yang | MLOps Engineer | MLflow tracking, model registry (`training/`) |
+| Ke Chen | Deployment Engineer | FastAPI, Docker, model loader (`serving/`) |
+| Haoju Li | Data and Monitoring | Data pipeline, scoring rules, Evidently (`data/`, `monitoring/`) |
