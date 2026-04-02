@@ -111,7 +111,7 @@ python monitoring/monitor.py
 # generates drift_report.html
 ```
 ![Evidently Data Drift Report](docs/images/data%20drift.jpg)
-*Illustrative screenshot of an Evidently data drift report. Scorimo uses DataDriftPreset to compare incoming prediction data against the training baseline. The report flags which features have shifted and by how much. Note: in this proof-of-concept, drift detection is run manually rather than on a schedule.*
+> *Illustrative screenshot of an Evidently data drift report. Scorimo uses DataDriftPreset to compare incoming prediction data against the training baseline. The report flags which features have shifted and by how much. Note: in this proof-of-concept, drift detection is run manually rather than on a schedule.*
 ---
 
 ## Limitations and Possible Improvements
