@@ -88,7 +88,7 @@ mlflow ui
 # opens at http://localhost:5000
 ```
 ![MLflow Tracking Dashboard](docs/images/MLflow.jpg)
-*Illustrative screenshot of MLflow experiment tracking. Each training run logs parameters (n_estimators, max_depth) and metrics (MAE). In our runs, the model achieved an MAE of 5.26, confirming the scoring rules are consistent. Note: model promotion to Production is done manually via the MLflow UI under the Models tab.*
+> *Illustrative screenshot of MLflow experiment tracking. Each training run logs parameters (n_estimators, max_depth) and metrics (MAE). In our runs, the model achieved an MAE of 5.26, confirming the scoring rules are consistent. Note: model promotion to Production is done manually via the MLflow UI under the Models tab.*
 
 ### Model registry
 
