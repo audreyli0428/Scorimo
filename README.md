@@ -102,6 +102,18 @@ Three endpoints are available:
 - `GET /health` - confirm the API is running
 - `GET /model-info` - see which model version is loaded
 
+### Health Monitoring in Practice
+
+The `/health` endpoint returns a simple status confirmation that the API is live. But having an endpoint is only useful if something is actively checking it.
+
+In a real production setup, this endpoint would be used in two ways:
+
+**Technically**, a load balancer or container orchestrator like Kubernetes would ping `/health` every 30 seconds. If it fails to respond, the system automatically restarts the container or redirects traffic to a healthy instance. This is called a liveness probe.
+
+**Operationally**, a monitoring tool like UptimeRobot or Datadog would call `/health` on a schedule and trigger an alert (email, Slack) if it goes down. This means the team is notified immediately rather than finding out from users.
+
+In our current proof-of-concept, the endpoint exists but no automated checking is configured. A real deployment would require both.
+
 ### Monitoring with Evidently
 
 Predictions are saved and compared against the training data distribution. To run a drift report:
