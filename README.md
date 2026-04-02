@@ -87,6 +87,8 @@ Each training run logs its parameters, metrics, and model artifact to MLflow. To
 mlflow ui
 # opens at http://localhost:5000
 ```
+![MLflow Tracking Dashboard](docs/images/MLflow.jpg)
+*Illustrative screenshot of MLflow experiment tracking. Each training run logs parameters (n_estimators, max_depth) and metrics (MAE). In our runs, the model achieved an MAE of 5.26, confirming the scoring rules are consistent. Note: model promotion to Production is done manually via the MLflow UI under the Models tab.*
 
 ### Model registry
 
@@ -108,7 +110,8 @@ Predictions are saved and compared against the training data distribution. To ru
 python monitoring/monitor.py
 # generates drift_report.html
 ```
-
+![Evidently Data Drift Report](docs/images/data%20drift.jpg)
+*Illustrative screenshot of an Evidently data drift report. Scorimo uses DataDriftPreset to compare incoming prediction data against the training baseline. The report flags which features have shifted and by how much. Note: in this proof-of-concept, drift detection is run manually rather than on a schedule.*
 ---
 
 ## Limitations and Possible Improvements
